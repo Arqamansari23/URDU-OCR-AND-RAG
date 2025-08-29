@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urdu Book OCR & RAG System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+        .card-header {
+            background-color: #f1f8ff;
+            border-bottom: 1px solid #e9ecef;
+            font-weight: 600;
+            padding: 1rem;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(37, 117, 252, 0.4);
+        }
+        .btn-secondary {
+            background: linear-gradient(135deg, #868f96 0%, #596164 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(89, 97, 100, 0.4);
+        }
+        .form-control {
+            border-radius: 8px;
+            border: 1px solid #ced4da;
+            padding: 0.75rem;
+        }
+        .form-control:focus {
+            border-color: #2575fc;
+            box-shadow: 0 0 0 0.25rem rgba(37, 117, 252, 0.25);
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            padding: 1rem;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+        }
+        .chat-message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-radius: 10px;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #f1f8e9;
+        }
+        .ocr-result {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 1rem;
+        }
+        .alert {
+            border-radius: 10px;
+        }
+        .page-range-inputs {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-0"><i class="fas fa-book-open me-3"></i>Urdu Book OCR & RAG System</h1>
+                    <p class="mb-0 mt-2">Extract text from Urdu books and chat with them using multilingual AI</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Urdu.svg/1200px-Urdu.svg.png" alt="Urdu Script" class="img-fluid" style="max-height: 80px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Upload PDF</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="pdfFile" class="form-label">Select PDF File</label>
+                                <input class="form-control" type="file" id="pdfFile" accept=".pdf" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Page Range</label>
+                                <div class="page-range-inputs">
+                                    <input type="number" class="form-control" id="startPage" placeholder="Start" min="1" value="1" required>
+                                    <span>to</span>
+                                    <input type="number" class="form-control" id="endPage" placeholder="End" min="1" value="10" required>
+                                </div>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-cloud-upload-alt me-2"></i>Upload PDF
+                                </button>
+                            </div>
+                        </form>
+                        <div id="uploadAlert" class="alert mt-3 hidden" role="alert"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cogs me-2"></i>Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button id="applyOcrBtn" class="btn btn-primary" disabled>
+                                <i class="fas fa-file-alt me-2"></i>Apply OCR
+                            </button>
+                            <button id="configureRagBtn" class="btn btn-secondary" disabled>
+                                <i class="fas fa-robot me-2"></i>Configure RAG
+                            </button>
+                        </div>
+                        <div id="actionAlert" class="alert mt-3 hidden" role="alert"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-file-alt me-2"></i>OCR Results</h5>
+                        <button id="clearOcrBtn" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-eraser me-1"></i>Clear
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="ocrResult" class="ocr-result">
+                            <p class="text-muted text-center">No OCR results yet. Upload a PDF and click "Apply OCR".</p>
+                        </div>
+                        <div id="ocrLoading" class="loading-spinner">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Processing PDF, please wait...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-comments me-2"></i>Chat with RAG</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="chatContainer" class="chat-container">
+                            <p class="text-muted text-center">No messages yet. Configure RAG and start chatting.</p>
+                        </div>
+                        <div id="chatLoading" class="loading-spinner">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Generating response, please wait...</p>
+                        </div>
+                        <form id="chatForm" class="mt-3">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="chatInput" placeholder="Ask a question in English, Urdu, or Roman Urdu..." disabled>
+                                <button class="btn btn-primary" type="submit" id="sendBtn" disabled>
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                        <div class="mt-2 small text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Supported languages: English, Urdu (اردو), Roman Urdu
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const uploadForm = document.getElementById('uploadForm');
+            const uploadAlert = document.getElementById('uploadAlert');
+            const applyOcrBtn = document.getElementById('applyOcrBtn');
+            const configureRagBtn = document.getElementById('configureRagBtn');
+            const actionAlert = document.getElementById('actionAlert');
+            const ocrResult = document.getElementById('ocrResult');
+            const ocrLoading = document.getElementById('ocrLoading');
+            const clearOcrBtn = document.getElementById('clearOcrBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const chatLoading = document.getElementById('chatLoading');
+            const chatForm = document.getElementById('chatForm');
+            const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            // State
+            let uploadedFile = null;
+            let ragConfigured = false;
+            
+            // Show alert helper
+            function showAlert(element, message, type) {
+                element.className = `alert alert-${type}`;
+                element.textContent = message;
+                element.classList.remove('hidden');
+                
+                // Hide after 5 seconds
+                setTimeout(() => {
+                    element.classList.add('hidden');
+                }, 5000);
+            }
+            
+            // Upload form submission
+            uploadForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData();
+                const pdfFile = document.getElementById('pdfFile').files[0];
+                const startPage = document.getElementById('startPage').value;
+                const endPage = document.getElementById('endPage').value;
+                
+                if (!pdfFile) {
+                    showAlert(uploadAlert, 'Please select a PDF file.', 'danger');
+                    return;
+                }
+                
+                if (parseInt(startPage) > parseInt(endPage)) {
+                    showAlert(uploadAlert, 'Start page must be less than or equal to end page.', 'danger');
+                    return;
+                }
+                
+                formData.append('pdf_file', pdfFile);
+                formData.append('start_page', startPage);
+                formData.append('end_page', endPage);
+                
+                fetch('/upload_pdf', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        uploadedFile = data;
+                        showAlert(uploadAlert, 'PDF uploaded successfully!', 'success');
+                        applyOcrBtn.disabled = false;
+                        configureRagBtn.disabled = false;
+                    } else {
+                        showAlert(uploadAlert, data.error, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showAlert(uploadAlert, 'An error occurred while uploading the file.', 'danger');
+                    console.error('Error:', error);
+                });
+            });
+            
+            // Apply OCR button click
+            applyOcrBtn.addEventListener('click', function() {
+                if (!uploadedFile) return;
+                
+                ocrLoading.style.display = 'block';
+                ocrResult.innerHTML = '';
+                
+                fetch('/apply_ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filepath: uploadedFile.filepath,
+                        start_page: uploadedFile.start_page,
+                        end_page: uploadedFile.end_page
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    ocrLoading.style.display = 'none';
+                    
+                    if (data.success) {
+                        ocrResult.textContent = data.text;
+                        showAlert(actionAlert, 'OCR completed successfully!', 'success');
+                    } else {
+                        ocrResult.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                        showAlert(actionAlert, data.error, 'danger');
+                    }
+                })
+                .catch(error => {
+                    ocrLoading.style.display = 'none';
+                    ocrResult.innerHTML = '<p class="text-danger">An error occurred during OCR processing.</p>';
+                    showAlert(actionAlert, 'An error occurred during OCR processing.', 'danger');
+                    console.error('Error:', error);
+                });
+            });
+            
+            // Configure RAG button click
+            configureRagBtn.addEventListener('click', function() {
+                if (!uploadedFile) return;
+                
+                actionAlert.innerHTML = '<div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>Configuring RAG system, please wait...';
+                actionAlert.className = 'alert alert-info';
+                actionAlert.classList.remove('hidden');
+                
+                fetch('/configure_rag', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filepath: uploadedFile.filepath,
+                        start_page: uploadedFile.start_page,
+                        end_page: uploadedFile.end_page
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        ragConfigured = true;
+                        chatInput.disabled = false;
+                        sendBtn.disabled = false;
+                        showAlert(actionAlert, 'RAG system configured successfully! You can now chat with the document.', 'success');
+                        chatContainer.innerHTML = '<p class="text-center text-success"><i class="fas fa-check-circle me-2"></i>RAG system is ready. Ask a question!</p>';
+                    } else {
+                        showAlert(actionAlert, data.error, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showAlert(actionAlert, 'An error occurred while configuring the RAG system.', 'danger');
+                    console.error('Error:', error);
+                });
+            });
+            
+            // Clear OCR results
+            clearOcrBtn.addEventListener('click', function() {
+                ocrResult.innerHTML = '<p class="text-muted text-center">No OCR results yet. Upload a PDF and click "Apply OCR".</p>';
+            });
+            
+            // Chat form submission
+            chatForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const query = chatInput.value.trim();
+                if (!query || !ragConfigured) return;
+                
+                // Add user message to chat
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = query;
+                chatContainer.appendChild(userMessage);
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Show loading
+                chatLoading.style.display = 'block';
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    chatLoading.style.display = 'none';
+                    
+                    if (data.success) {
+                        // Add bot message to chat
+                        const botMessage = document.createElement('div');
+                        botMessage.className = 'chat-message bot-message';
+                        botMessage.textContent = data.response;
+                        chatContainer.appendChild(botMessage);
+                    } else {
+                        // Add error message
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'chat-message bot-message text-danger';
+                        errorMessage.textContent = `Error: ${data.error}`;
+                        chatContainer.appendChild(errorMessage);
+                    }
+                    
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                })
+                .catch(error => {
+                    chatLoading.style.display = 'none';
+                    
+                    // Add error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'chat-message bot-message text-danger';
+                    errorMessage.textContent = 'An error occurred while generating a response.';
+                    chatContainer.appendChild(errorMessage);
+                    
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    console.error('Error:', error);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

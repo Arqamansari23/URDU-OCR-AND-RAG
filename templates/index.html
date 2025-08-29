@@ -1,0 +1,1570 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urdu Book OCR & RAG System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #0d6efd;
+        }
+        .upload-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .options-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .btn-success {
+            background-color: #198754;
+            border-color: #198754;
+        }
+        .result-section {
+            margin-top: 2rem;
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 1rem;
+            background-color: #f8f9fa;
+        }
+        .chat-message {
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e9ecef;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #d1e7dd;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        .spinner-border {
+            width: 1rem;
+            height: 1rem;
+        }
+        .tab-content {
+            padding-top: 1rem;
+        }
+        .nav-tabs .nav-link {
+            color: #0d6efd;
+        }
+        .nav-tabs .nav-link.active {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="bi bi-book"></i> Urdu Book OCR & RAG System</h1>
+            <p class="lead">Extract text from Urdu books and chat with them using multilingual RAG</p>
+        </div>
+
+        <div class="upload-section">
+            <h3><i class="bi bi-cloud-upload"></i> Upload PDF</h3>
+            <div class="mb-3">
+                <label for="pdfFile" class="form-label">Select a PDF file containing Urdu text:</label>
+                <input class="form-control" type="file" id="pdfFile" accept=".pdf">
+            </div>
+            <div id="uploadStatus" class="alert alert-info d-none">
+                <i class="bi bi-info-circle"></i> <span id="uploadStatusText"></span>
+            </div>
+        </div>
+
+        <div class="options-section">
+            <h3><i class="bi bi-gear"></i> Processing Options</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="startPage" class="form-label">Start Page:</label>
+                        <input type="number" class="form-control" id="startPage" min="1" value="1">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="endPage" class="form-label">End Page:</label>
+                        <input type="number" class="form-control" id="endPage" min="1" value="10">
+                    </div>
+                </div>
+            </div>
+            <div class="mb-3" id="groqApiKeyDiv" style="display: none;">
+                <label for="groqApiKey" class="form-label">Groq API Key:</label>
+                <input type="password" class="form-control" id="groqApiKey" placeholder="Enter your Groq API key">
+                <div class="form-text">Get your API key from <a href="https://console.groq.com/" target="_blank">https://console.groq.com/</a></div>
+            </div>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <button class="btn btn-primary" id="applyOcrBtn">
+                    <i class="bi bi-eye"></i> Apply OCR
+                </button>
+                <button class="btn btn-success" id="configureRagBtn">
+                    <i class="bi bi-chat-dots"></i> Configure RAG
+                </button>
+            </div>
+        </div>
+
+        <div class="result-section">
+            <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="extracted-text-tab" data-bs-toggle="tab" data-bs-target="#extracted-text" type="button" role="tab" aria-controls="extracted-text" aria-selected="true">
+                        <i class="bi bi-file-text"></i> Extracted Text
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab" aria-controls="chat" aria-selected="false">
+                        <i class="bi bi-chat-dots"></i> Chat
+                    </button>
+                </li>
+            </ul>
+            <div class="tab-content" id="resultTabsContent">
+                <div class="tab-pane fade show active" id="extracted-text" role="tabpanel" aria-labelledby="extracted-text-tab">
+                    <div class="mb-3">
+                        <div id="extractedTextContainer" class="form-control" style="height: 400px; overflow-y: auto; background-color: #f8f9fa;">
+                            <p class="text-muted text-center">Extracted text will appear here...</p>
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button class="btn btn-outline-primary" id="downloadTextBtn" disabled>
+                            <i class="bi bi-download"></i> Download Text
+                        </button>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="chat" role="tabpanel" aria-labelledby="chat-tab">
+                    <div class="mb-3">
+                        <div id="chatContainer" class="chat-container">
+                            <p class="text-muted text-center">Chat will appear here after configuring RAG...</p>
+                        </div>
+                    </div>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="chatInput" placeholder="Type your question in English, Urdu, or Roman Urdu..." disabled>
+                        <button class="btn btn-primary" type="button" id="sendChatBtn" disabled>
+                            <i class="bi bi-send"></i> Send
+                        </button>
+                    </div>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle"></i> You can ask questions in English, Urdu (اردو), or Roman Urdu. The system will respond in the same language.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span id="loadingText">Processing...</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const pdfFile = document.getElementById('pdfFile');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadStatusText = document.getElementById('uploadStatusText');
+            const startPage = document.getElementById('startPage');
+            const endPage = document.getElementById('endPage');
+            const groqApiKeyDiv = document.getElementById('groqApiKeyDiv');
+            const groqApiKey = document.getElementById('groqApiKey');
+            const applyOcrBtn = document.getElementById('applyOcrBtn');
+            const configureRagBtn = document.getElementById('configureRagBtn');
+            const extractedTextContainer = document.getElementById('extractedTextContainer');
+            const downloadTextBtn = document.getElementById('downloadTextBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const chatInput = document.getElementById('chatInput');
+            const sendChatBtn = document.getElementById('sendChatBtn');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const loadingText = document.getElementById('loadingText');
+            
+            // State
+            let sessionId = null;
+            let outputFileName = null;
+            let ragConfigured = false;
+            
+            // Show/hide loading indicator
+            function showLoading(text = 'Processing...') {
+                loadingText.textContent = text;
+                loadingIndicator.style.display = 'block';
+                applyOcrBtn.disabled = true;
+                configureRagBtn.disabled = true;
+            }
+            
+            function hideLoading() {
+                loadingIndicator.style.display = 'none';
+                applyOcrBtn.disabled = false;
+                configureRagBtn.disabled = false;
+            }
+            
+            // Show status message
+            function showStatus(message, type = 'info') {
+                uploadStatus.className = `alert alert-${type} d-block`;
+                uploadStatusText.textContent = message;
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    uploadStatus.className = 'alert alert-info d-none';
+                }, 5000);
+            }
+            
+            // Handle file upload
+            pdfFile.addEventListener('change', function() {
+                if (pdfFile.files.length > 0) {
+                    const file = pdfFile.files[0];
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    showLoading('Uploading file...');
+                    
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        hideLoading();
+                        
+                        if (data.success) {
+                            sessionId = data.session_id;
+                            showStatus(`File "${data.filename}" uploaded successfully.`, 'success');
+                        } else {
+                            showStatus(`Error: ${data.error}`, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        showStatus(`Error uploading file: ${error.message}`, 'danger');
+                    });
+                }
+            });
+            
+            // Show Groq API key field when hovering over Configure RAG button
+            configureRagBtn.addEventListener('mouseenter', function() {
+                groqApiKeyDiv.style.display = 'block';
+            });
+            
+            // Apply OCR
+            applyOcrBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading('Applying OCR...');
+                
+                fetch('/apply_ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        extractedTextContainer.innerHTML = `<pre>${data.text}</pre>`;
+                        downloadTextBtn.disabled = false;
+                        showStatus('OCR applied successfully.', 'success');
+                        
+                        // Switch to extracted text tab
+                        const extractedTextTab = new bootstrap.Tab(document.getElementById('extracted-text-tab'));
+                        extractedTextTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error applying OCR: ${error.message}`, 'danger');
+                });
+            });
+            
+            // Configure RAG
+            configureRagBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const apiKey = groqApiKey.value.trim();
+                if (!apiKey) {
+                    showStatus('Please enter your Groq API key.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading('Configuring RAG system...');
+                
+                fetch('/configure_rag', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        groq_api_key: apiKey,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        ragConfigured = true;
+                        chatInput.disabled = false;
+                        sendChatBtn.disabled = false;
+                        chatContainer.innerHTML = '<p class="text-muted text-center">RAG system configured. You can now start chatting!</p>';
+                        showStatus('RAG system configured successfully.', 'success');
+                        
+                        // Switch to chat tab
+                        const chatTab = new bootstrap.Tab(document.getElementById('chat-tab'));
+                        chatTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error configuring RAG: ${error.message}`, 'danger');
+                });
+            });
+            
+            // Download extracted text
+            downloadTextBtn.addEventListener('click', function() {
+                if (outputFileName) {
+                    window.location.href = `/output/${outputFileName}`;
+                }
+            });
+            
+            // Send chat message
+            function sendChatMessage() {
+                const query = chatInput.value.trim();
+                if (!query || !ragConfigured) return;
+                
+                // Add user message to chat
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = query;
+                chatContainer.appendChild(userMessage);
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Add loading message
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'chat-message bot-message';
+                loadingMessage.innerHTML = '<i class="bi bi-hourglass-split"></i> Thinking...';
+                chatContainer.appendChild(loadingMessage);
+                
+                // Scroll to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Send query to server
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    if (data.success) {
+                        // Add bot response to chat
+                        const botMessage = document.createElement('div');
+                        botMessage.className = 'chat-message bot-message';
+                        botMessage.textContent = data.response;
+                        chatContainer.appendChild(botMessage);
+                    } else {
+                        // Add error message
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'chat-message bot-message';
+                        errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${data.error}`;
+                        chatContainer.appendChild(errorMessage);
+                    }
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                })
+                .catch(error => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    // Add error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'chat-message bot-message';
+                    errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${error.message}`;
+                    chatContainer.appendChild(errorMessage);
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                });
+            }
+            
+            sendChatBtn.addEventListener('click', sendChatMessage);
+            
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html> -->
+
+
+
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urdu Book OCR & RAG System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #0d6efd;
+        }
+        .upload-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .options-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .btn-success {
+            background-color: #198754;
+            border-color: #198754;
+        }
+        .result-section {
+            margin-top: 2rem;
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 1rem;
+            background-color: #f8f9fa;
+        }
+        .chat-message {
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e9ecef;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #d1e7dd;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        .spinner-border {
+            width: 1rem;
+            height: 1rem;
+        }
+        .tab-content {
+            padding-top: 1rem;
+        }
+        .nav-tabs .nav-link {
+            color: #0d6efd;
+        }
+        .nav-tabs .nav-link.active {
+            font-weight: bold;
+        }
+        .performance-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-ready {
+            background-color: #198754;
+        }
+        .status-processing {
+            background-color: #ffc107;
+        }
+        .status-error {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="bi bi-book"></i> Urdu Book OCR & RAG System</h1>
+            <p class="lead">Extract text from Urdu books and chat with them using multilingual RAG</p>
+        </div>
+
+        <div class="upload-section">
+            <h3><i class="bi bi-cloud-upload"></i> Upload PDF</h3>
+            <div class="mb-3">
+                <label for="pdfFile" class="form-label">Select a PDF file containing Urdu text:</label>
+                <input class="form-control" type="file" id="pdfFile" accept=".pdf">
+            </div>
+            <div id="uploadStatus" class="alert alert-info d-none">
+                <i class="bi bi-info-circle"></i> <span id="uploadStatusText"></span>
+            </div>
+        </div>
+
+        <div class="options-section">
+            <h3><i class="bi bi-gear"></i> Processing Options</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="startPage" class="form-label">Start Page:</label>
+                        <input type="number" class="form-control" id="startPage" min="1" value="1">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="endPage" class="form-label">End Page:</label>
+                        <input type="number" class="form-control" id="endPage" min="1" value="10">
+                    </div>
+                </div>
+            </div>
+            <div class="mb-3" id="groqApiKeyDiv" style="display: none;">
+                <label for="groqApiKey" class="form-label">Groq API Key:</label>
+                <input type="password" class="form-control" id="groqApiKey" placeholder="Enter your Groq API key">
+                <div class="form-text">Get your API key from <a href="https://console.groq.com/" target="_blank">https://console.groq.com/</a></div>
+            </div>
+            <div class="performance-info">
+                <i class="bi bi-lightning"></i> Only the selected page range will be processed for improved performance.
+            </div>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <button class="btn btn-primary" id="applyOcrBtn">
+                    <i class="bi bi-eye"></i> Apply OCR
+                </button>
+                <button class="btn btn-success" id="configureRagBtn">
+                    <i class="bi bi-chat-dots"></i> Configure RAG
+                </button>
+            </div>
+            <div class="mt-2">
+                <span id="ragStatus" class="d-none">
+                    <span class="status-indicator status-processing"></span>
+                    <span id="ragStatusText">RAG Status: Not Configured</span>
+                </span>
+            </div>
+        </div>
+
+        <div class="result-section">
+            <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="extracted-text-tab" data-bs-toggle="tab" data-bs-target="#extracted-text" type="button" role="tab" aria-controls="extracted-text" aria-selected="true">
+                        <i class="bi bi-file-text"></i> Extracted Text
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab" aria-controls="chat" aria-selected="false">
+                        <i class="bi bi-chat-dots"></i> Chat
+                    </button>
+                </li>
+            </ul>
+            <div class="tab-content" id="resultTabsContent">
+                <div class="tab-pane fade show active" id="extracted-text" role="tabpanel" aria-labelledby="extracted-text-tab">
+                    <div class="mb-3">
+                        <div id="extractedTextContainer" class="form-control" style="height: 400px; overflow-y: auto; background-color: #f8f9fa;">
+                            <p class="text-muted text-center">Extracted text will appear here...</p>
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button class="btn btn-outline-primary" id="downloadTextBtn" disabled>
+                            <i class="bi bi-download"></i> Download Text
+                        </button>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="chat" role="tabpanel" aria-labelledby="chat-tab">
+                    <div class="mb-3">
+                        <div id="chatContainer" class="chat-container">
+                            <p class="text-muted text-center">Chat will appear here after configuring RAG...</p>
+                        </div>
+                    </div>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="chatInput" placeholder="Type your question in English, Urdu, or Roman Urdu..." disabled>
+                        <button class="btn btn-primary" type="button" id="sendChatBtn" disabled>
+                            <i class="bi bi-send"></i> Send
+                        </button>
+                    </div>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle"></i> You can ask questions in English, Urdu (اردو), or Roman Urdu. The system will respond in the same language.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span id="loadingText">Processing...</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const pdfFile = document.getElementById('pdfFile');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadStatusText = document.getElementById('uploadStatusText');
+            const startPage = document.getElementById('startPage');
+            const endPage = document.getElementById('endPage');
+            const groqApiKeyDiv = document.getElementById('groqApiKeyDiv');
+            const groqApiKey = document.getElementById('groqApiKey');
+            const applyOcrBtn = document.getElementById('applyOcrBtn');
+            const configureRagBtn = document.getElementById('configureRagBtn');
+            const extractedTextContainer = document.getElementById('extractedTextContainer');
+            const downloadTextBtn = document.getElementById('downloadTextBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const chatInput = document.getElementById('chatInput');
+            const sendChatBtn = document.getElementById('sendChatBtn');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const loadingText = document.getElementById('loadingText');
+            const ragStatus = document.getElementById('ragStatus');
+            const ragStatusText = document.getElementById('ragStatusText');
+            
+            // State
+            let sessionId = null;
+            let outputFileName = null;
+            let ragConfigured = false;
+            
+            // Show/hide loading indicator
+            function showLoading(text = 'Processing...') {
+                loadingText.textContent = text;
+                loadingIndicator.style.display = 'block';
+                applyOcrBtn.disabled = true;
+                configureRagBtn.disabled = true;
+            }
+            
+            function hideLoading() {
+                loadingIndicator.style.display = 'none';
+                applyOcrBtn.disabled = false;
+                configureRagBtn.disabled = false;
+            }
+            
+            // Show status message
+            function showStatus(message, type = 'info') {
+                uploadStatus.className = `alert alert-${type} d-block`;
+                uploadStatusText.textContent = message;
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    uploadStatus.className = 'alert alert-info d-none';
+                }, 5000);
+            }
+            
+            // Update RAG status
+            function updateRagStatus(status, text) {
+                ragStatus.className = 'd-block';
+                const indicator = ragStatus.querySelector('.status-indicator');
+                indicator.className = `status-indicator status-${status}`;
+                ragStatusText.textContent = `RAG Status: ${text}`;
+            }
+            
+            // Handle file upload
+            pdfFile.addEventListener('change', function() {
+                if (pdfFile.files.length > 0) {
+                    const file = pdfFile.files[0];
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    showLoading('Uploading file...');
+                    
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        hideLoading();
+                        
+                        if (data.success) {
+                            sessionId = data.session_id;
+                            showStatus(`File "${data.filename}" uploaded successfully.`, 'success');
+                            updateRagStatus('processing', 'File Uploaded - Ready to Process');
+                        } else {
+                            showStatus(`Error: ${data.error}`, 'danger');
+                            updateRagStatus('error', 'Upload Failed');
+                        }
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        showStatus(`Error uploading file: ${error.message}`, 'danger');
+                        updateRagStatus('error', 'Upload Failed');
+                    });
+                }
+            });
+            
+            // Show Groq API key field when hovering over Configure RAG button
+            configureRagBtn.addEventListener('mouseenter', function() {
+                groqApiKeyDiv.style.display = 'block';
+            });
+            
+            // Apply OCR
+            applyOcrBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading(`Applying OCR on pages ${start} to ${end}...`);
+                updateRagStatus('processing', 'Processing OCR...');
+                
+                fetch('/apply_ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        extractedTextContainer.innerHTML = `<pre>${data.text}</pre>`;
+                        downloadTextBtn.disabled = false;
+                        showStatus(`OCR applied successfully on pages ${start} to ${end}.`, 'success');
+                        updateRagStatus('processing', 'OCR Complete - Ready for RAG');
+                        
+                        // Switch to extracted text tab
+                        const extractedTextTab = new bootstrap.Tab(document.getElementById('extracted-text-tab'));
+                        extractedTextTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                        updateRagStatus('error', 'OCR Failed');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error applying OCR: ${error.message}`, 'danger');
+                    updateRagStatus('error', 'OCR Failed');
+                });
+            });
+            
+            // Configure RAG
+            configureRagBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const apiKey = groqApiKey.value.trim();
+                if (!apiKey) {
+                    showStatus('Please enter your Groq API key.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading(`Configuring RAG for pages ${start} to ${end}...`);
+                updateRagStatus('processing', 'Creating Embeddings...');
+                
+                fetch('/configure_rag', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        groq_api_key: apiKey,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        ragConfigured = true;
+                        chatInput.disabled = false;
+                        sendChatBtn.disabled = false;
+                        chatContainer.innerHTML = '<p class="text-muted text-center">RAG system configured successfully! You can now start chatting.</p>';
+                        showStatus(`RAG system configured successfully for pages ${start} to ${end}.`, 'success');
+                        updateRagStatus('ready', 'Ready to Chat');
+                        
+                        // Switch to chat tab
+                        const chatTab = new bootstrap.Tab(document.getElementById('chat-tab'));
+                        chatTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                        updateRagStatus('error', 'RAG Configuration Failed');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error configuring RAG: ${error.message}`, 'danger');
+                    updateRagStatus('error', 'RAG Configuration Failed');
+                });
+            });
+            
+            // Download extracted text
+            downloadTextBtn.addEventListener('click', function() {
+                if (outputFileName) {
+                    window.location.href = `/output/${outputFileName}`;
+                }
+            });
+            
+            // Send chat message
+            function sendChatMessage() {
+                const query = chatInput.value.trim();
+                if (!query || !ragConfigured) return;
+                
+                // Add user message to chat
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = query;
+                chatContainer.appendChild(userMessage);
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Add loading message
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'chat-message bot-message';
+                loadingMessage.innerHTML = '<i class="bi bi-hourglass-split"></i> Thinking...';
+                chatContainer.appendChild(loadingMessage);
+                
+                // Scroll to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Send query to server
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        query: query
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    if (data.success) {
+                        // Add bot response to chat
+                        const botMessage = document.createElement('div');
+                        botMessage.className = 'chat-message bot-message';
+                        botMessage.textContent = data.response;
+                        chatContainer.appendChild(botMessage);
+                    } else {
+                        // Add error message
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'chat-message bot-message';
+                        errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${data.error}`;
+                        chatContainer.appendChild(errorMessage);
+                    }
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                })
+                .catch(error => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    // Add error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'chat-message bot-message';
+                    errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${error.message}`;
+                    chatContainer.appendChild(errorMessage);
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                });
+            }
+            
+            sendChatBtn.addEventListener('click', sendChatMessage);
+            
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html> -->
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urdu Book OCR & RAG System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #0d6efd;
+        }
+        .upload-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .options-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .btn-success {
+            background-color: #198754;
+            border-color: #198754;
+        }
+        .result-section {
+            margin-top: 2rem;
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 1rem;
+            background-color: #f8f9fa;
+        }
+        .chat-message {
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e9ecef;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #d1e7dd;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        .spinner-border {
+            width: 1rem;
+            height: 1rem;
+        }
+        .tab-content {
+            padding-top: 1rem;
+        }
+        .nav-tabs .nav-link {
+            color: #0d6efd;
+        }
+        .nav-tabs .nav-link.active {
+            font-weight: bold;
+        }
+        .performance-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-ready {
+            background-color: #198754;
+        }
+        .status-processing {
+            background-color: #ffc107;
+        }
+        .status-error {
+            background-color: #dc3545;
+        }
+        .debug-info {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="bi bi-book"></i> Urdu Book OCR & RAG System</h1>
+            <p class="lead">Extract text from Urdu books and chat with them using multilingual RAG</p>
+        </div>
+
+        <div class="upload-section">
+            <h3><i class="bi bi-cloud-upload"></i> Upload PDF</h3>
+            <div class="mb-3">
+                <label for="pdfFile" class="form-label">Select a PDF file containing Urdu text:</label>
+                <input class="form-control" type="file" id="pdfFile" accept=".pdf">
+            </div>
+            <div id="uploadStatus" class="alert alert-info d-none">
+                <i class="bi bi-info-circle"></i> <span id="uploadStatusText"></span>
+            </div>
+        </div>
+
+        <div class="options-section">
+            <h3><i class="bi bi-gear"></i> Processing Options</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="startPage" class="form-label">Start Page:</label>
+                        <input type="number" class="form-control" id="startPage" min="1" value="1">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="endPage" class="form-label">End Page:</label>
+                        <input type="number" class="form-control" id="endPage" min="1" value="10">
+                    </div>
+                </div>
+            </div>
+            <div class="mb-3" id="groqApiKeyDiv" style="display: none;">
+                <label for="groqApiKey" class="form-label">Groq API Key:</label>
+                <input type="password" class="form-control" id="groqApiKey" placeholder="Enter your Groq API key">
+                <div class="form-text">Get your API key from <a href="https://console.groq.com/" target="_blank">https://console.groq.com/</a></div>
+            </div>
+            <div class="performance-info">
+                <i class="bi bi-lightning"></i> Only the selected page range will be processed for improved performance.
+            </div>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <button class="btn btn-primary" id="applyOcrBtn">
+                    <i class="bi bi-eye"></i> Apply OCR
+                </button>
+                <button class="btn btn-success" id="configureRagBtn">
+                    <i class="bi bi-chat-dots"></i> Configure RAG
+                </button>
+            </div>
+            <div class="mt-2">
+                <span id="ragStatus" class="d-none">
+                    <span class="status-indicator status-processing"></span>
+                    <span id="ragStatusText">RAG Status: Not Configured</span>
+                </span>
+            </div>
+            <div id="debugInfo" class="debug-info d-none"></div>
+        </div>
+
+        <div class="result-section">
+            <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="extracted-text-tab" data-bs-toggle="tab" data-bs-target="#extracted-text" type="button" role="tab" aria-controls="extracted-text" aria-selected="true">
+                        <i class="bi bi-file-text"></i> Extracted Text
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab" aria-controls="chat" aria-selected="false">
+                        <i class="bi bi-chat-dots"></i> Chat
+                    </button>
+                </li>
+            </ul>
+            <div class="tab-content" id="resultTabsContent">
+                <div class="tab-pane fade show active" id="extracted-text" role="tabpanel" aria-labelledby="extracted-text-tab">
+                    <div class="mb-3">
+                        <div id="extractedTextContainer" class="form-control" style="height: 400px; overflow-y: auto; background-color: #f8f9fa;">
+                            <p class="text-muted text-center">Extracted text will appear here...</p>
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button class="btn btn-outline-primary" id="downloadTextBtn" disabled>
+                            <i class="bi bi-download"></i> Download Text
+                        </button>
+                    </div>
+                </div>
+                <div class="tab-pane fade" id="chat" role="tabpanel" aria-labelledby="chat-tab">
+                    <div class="mb-3">
+                        <div id="chatContainer" class="chat-container">
+                            <p class="text-muted text-center">Chat will appear here after configuring RAG...</p>
+                        </div>
+                    </div>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="chatInput" placeholder="Type your question in English, Urdu, or Roman Urdu..." disabled>
+                        <button class="btn btn-primary" type="button" id="sendChatBtn" disabled>
+                            <i class="bi bi-send"></i> Send
+                        </button>
+                    </div>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle"></i> You can ask questions in English, Urdu (اردو), or Roman Urdu. The system will respond in the same language.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span id="loadingText">Processing...</span>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const pdfFile = document.getElementById('pdfFile');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadStatusText = document.getElementById('uploadStatusText');
+            const startPage = document.getElementById('startPage');
+            const endPage = document.getElementById('endPage');
+            const groqApiKeyDiv = document.getElementById('groqApiKeyDiv');
+            const groqApiKey = document.getElementById('groqApiKey');
+            const applyOcrBtn = document.getElementById('applyOcrBtn');
+            const configureRagBtn = document.getElementById('configureRagBtn');
+            const extractedTextContainer = document.getElementById('extractedTextContainer');
+            const downloadTextBtn = document.getElementById('downloadTextBtn');
+            const chatContainer = document.getElementById('chatContainer');
+            const chatInput = document.getElementById('chatInput');
+            const sendChatBtn = document.getElementById('sendChatBtn');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const loadingText = document.getElementById('loadingText');
+            const ragStatus = document.getElementById('ragStatus');
+            const ragStatusText = document.getElementById('ragStatusText');
+            const debugInfo = document.getElementById('debugInfo');
+            
+            // State
+            let sessionId = null;
+            let outputFileName = null;
+            let ragConfigured = false;
+            
+            // Show/hide loading indicator
+            function showLoading(text = 'Processing...') {
+                loadingText.textContent = text;
+                loadingIndicator.style.display = 'block';
+                applyOcrBtn.disabled = true;
+                configureRagBtn.disabled = true;
+            }
+            
+            function hideLoading() {
+                loadingIndicator.style.display = 'none';
+                applyOcrBtn.disabled = false;
+                configureRagBtn.disabled = false;
+            }
+            
+            // Show status message
+            function showStatus(message, type = 'info') {
+                uploadStatus.className = `alert alert-${type} d-block`;
+                uploadStatusText.textContent = message;
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    uploadStatus.className = 'alert alert-info d-none';
+                }, 5000);
+            }
+            
+            // Update RAG status
+            function updateRagStatus(status, text) {
+                ragStatus.className = 'd-block';
+                const indicator = ragStatus.querySelector('.status-indicator');
+                indicator.className = `status-indicator status-${status}`;
+                ragStatusText.textContent = `RAG Status: ${text}`;
+            }
+            
+            // Show debug info
+            function showDebugInfo(info) {
+                debugInfo.textContent = info;
+                debugInfo.className = 'debug-info d-block';
+            }
+            
+            // Handle file upload
+            pdfFile.addEventListener('change', function() {
+                if (pdfFile.files.length > 0) {
+                    const file = pdfFile.files[0];
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    showLoading('Uploading file...');
+                    
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        hideLoading();
+                        
+                        if (data.success) {
+                            sessionId = data.session_id;
+                            showStatus(`File "${data.filename}" uploaded successfully.`, 'success');
+                            updateRagStatus('processing', 'File Uploaded - Ready to Process');
+                            showDebugInfo(`Session ID: ${sessionId}`);
+                        } else {
+                            showStatus(`Error: ${data.error}`, 'danger');
+                            updateRagStatus('error', 'Upload Failed');
+                        }
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        showStatus(`Error uploading file: ${error.message}`, 'danger');
+                        updateRagStatus('error', 'Upload Failed');
+                    });
+                }
+            });
+            
+            // Show Groq API key field when hovering over Configure RAG button
+            configureRagBtn.addEventListener('mouseenter', function() {
+                groqApiKeyDiv.style.display = 'block';
+            });
+            
+            // Apply OCR
+            applyOcrBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading(`Applying OCR on pages ${start} to ${end}...`);
+                updateRagStatus('processing', 'Processing OCR...');
+                
+                fetch('/apply_ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        extractedTextContainer.innerHTML = `<pre>${data.text}</pre>`;
+                        downloadTextBtn.disabled = false;
+                        showStatus(`OCR applied successfully on pages ${start} to ${end}.`, 'success');
+                        updateRagStatus('processing', 'OCR Complete - Ready for RAG');
+                        
+                        // Switch to extracted text tab
+                        const extractedTextTab = new bootstrap.Tab(document.getElementById('extracted-text-tab'));
+                        extractedTextTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                        updateRagStatus('error', 'OCR Failed');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error applying OCR: ${error.message}`, 'danger');
+                    updateRagStatus('error', 'OCR Failed');
+                });
+            });
+            
+            // Configure RAG
+            configureRagBtn.addEventListener('click', function() {
+                if (!sessionId) {
+                    showStatus('Please upload a PDF file first.', 'warning');
+                    return;
+                }
+                
+                const apiKey = groqApiKey.value.trim();
+                if (!apiKey) {
+                    showStatus('Please enter your Groq API key.', 'warning');
+                    return;
+                }
+                
+                const start = parseInt(startPage.value) || 1;
+                const end = parseInt(endPage.value) || 10;
+                
+                if (start > end) {
+                    showStatus('Start page must be less than or equal to end page.', 'warning');
+                    return;
+                }
+                
+                showLoading(`Configuring RAG for pages ${start} to ${end}...`);
+                updateRagStatus('processing', 'Creating Embeddings...');
+                
+                fetch('/configure_rag', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        groq_api_key: apiKey,
+                        start_page: start,
+                        end_page: end
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    
+                    if (data.success) {
+                        outputFileName = data.output_file;
+                        ragConfigured = true;
+                        chatInput.disabled = false;
+                        sendChatBtn.disabled = false;
+                        chatContainer.innerHTML = '<p class="text-muted text-center">RAG system configured successfully! You can now start chatting.</p>';
+                        showStatus(`RAG system configured successfully for pages ${start} to ${end}.`, 'success');
+                        updateRagStatus('ready', 'Ready to Chat');
+                        
+                        // Show debug info
+                        if (data.vector_store_files) {
+                            showDebugInfo(`Vector store files: ${data.vector_store_files.join(', ')}`);
+                        }
+                        
+                        // Switch to chat tab
+                        const chatTab = new bootstrap.Tab(document.getElementById('chat-tab'));
+                        chatTab.show();
+                    } else {
+                        showStatus(`Error: ${data.error}`, 'danger');
+                        updateRagStatus('error', 'RAG Configuration Failed');
+                        showDebugInfo(`Error: ${data.error}`);
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showStatus(`Error configuring RAG: ${error.message}`, 'danger');
+                    updateRagStatus('error', 'RAG Configuration Failed');
+                    showDebugInfo(`Error: ${error.message}`);
+                });
+            });
+            
+            // Download extracted text
+            downloadTextBtn.addEventListener('click', function() {
+                if (outputFileName) {
+                    window.location.href = `/output/${outputFileName}`;
+                }
+            });
+            
+            // Send chat message
+            function sendChatMessage() {
+                const query = chatInput.value.trim();
+                if (!query || !ragConfigured) return;
+                
+                // Add user message to chat
+                const userMessage = document.createElement('div');
+                userMessage.className = 'chat-message user-message';
+                userMessage.textContent = query;
+                chatContainer.appendChild(userMessage);
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Add loading message
+                const loadingMessage = document.createElement('div');
+                loadingMessage.className = 'chat-message bot-message';
+                loadingMessage.innerHTML = '<i class="bi bi-hourglass-split"></i> Thinking...';
+                chatContainer.appendChild(loadingMessage);
+                
+                // Scroll to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Send query to server
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        query: query
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    if (data.success) {
+                        // Add bot response to chat
+                        const botMessage = document.createElement('div');
+                        botMessage.className = 'chat-message bot-message';
+                        botMessage.textContent = data.response;
+                        chatContainer.appendChild(botMessage);
+                    } else {
+                        // Add error message
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'chat-message bot-message';
+                        errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${data.error}`;
+                        chatContainer.appendChild(errorMessage);
+                    }
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                })
+                .catch(error => {
+                    // Remove loading message
+                    chatContainer.removeChild(loadingMessage);
+                    
+                    // Add error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'chat-message bot-message';
+                    errorMessage.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Error: ${error.message}`;
+                    chatContainer.appendChild(errorMessage);
+                    
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                });
+            }
+            
+            sendChatBtn.addEventListener('click', sendChatMessage);
+            
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
