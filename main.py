@@ -22,7 +22,7 @@ from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 import re
 from dotenv import load_dotenv
-from typing import List
+from typing import List, Tuple
 import gc
 import threading
 from queue import Queue
@@ -56,6 +56,11 @@ global_embedding_model_lock = threading.Lock()
 # Status queues for real-time updates
 ocr_status_queue = Queue()
 rag_status_queue = Queue()
+
+# Configuration constants for relevance filtering
+SIMILARITY_THRESHOLD = 0.1  # Minimum similarity score (lowered for better recall)
+RETRIEVAL_K = 7  # Retrieve more chunks for better filtering
+MIN_CHUNKS_REQUIRED = 1  # Minimum chunks needed to answer (changed to 1)
 
 def get_shared_embedding_model():
     """Get or create shared embedding model instance"""
@@ -392,7 +397,7 @@ def process_pdf_batch(pdf_path, start_page=1, end_page=None, output_file="output
 
 class MultilingualRAG:
     def __init__(self, groq_api_key: str, data_file: str = "output/output.txt", book_id: str = None):
-        """Initialize the multilingual RAG system"""
+        """Initialize the multilingual RAG system with enhanced context focus"""
         self.groq_api_key = groq_api_key
         self.data_file = data_file
         self.book_id = book_id or os.path.splitext(os.path.basename(data_file))[0]
@@ -404,15 +409,15 @@ class MultilingualRAG:
 
         self.embedding_model = get_shared_embedding_model()
 
-        # Initialize Groq LLM with current production model
+        # Initialize Groq LLM with lower temperature for more focused responses
         status_message = "Initializing Groq LLM..."
         rag_status_queue.put(status_message)
         print(status_message)
 
         self.llm = ChatGroq(
-            temperature=0.7,
+            temperature=0.2,  # Lower temperature for strict context adherence
             groq_api_key=groq_api_key,
-            model_name="llama-3.3-70b-versatile"  # Current production model
+            model_name="llama-3.3-70b-versatile"
         )
 
         # Initialize components
@@ -447,7 +452,7 @@ class MultilingualRAG:
             return "english"
     
     def load_and_chunk_documents(self) -> List[Document]:
-        """Load and chunk the Urdu text documents"""
+        """Load and chunk the Urdu text documents with larger chunks for better context"""
         status_message = f"Loading documents from {self.data_file}"
         rag_status_queue.put(status_message)
         print(status_message)
@@ -476,10 +481,10 @@ class MultilingualRAG:
         rag_status_queue.put(status_message)
         print(status_message)
         
-        # Chunk the documents
+        # Chunk the documents with larger chunks for better context
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100,
+            chunk_size=800,  # Increased from 500
+            chunk_overlap=150,  # Increased from 100
             separators=["\n\n", "\n", ".", "!", "?", ";", ":", " ", ""]
         )
         
@@ -594,8 +599,13 @@ class MultilingualRAG:
             print("Recreating vector store...")
             self.create_vector_store()
     
-    def search_similar_chunks(self, query: str, k: int = 5) -> List[str]:
-        """Search for similar chunks using the query"""
+    def search_similar_chunks(self, query: str, k: int = RETRIEVAL_K, 
+                            similarity_threshold: float = SIMILARITY_THRESHOLD) -> List[Tuple[str, float]]:
+        """
+        Search for similar chunks using the query with relevance filtering.
+        Returns list of tuples: (chunk_text, similarity_score)
+        Only returns chunks above the similarity threshold.
+        """
         # Create query embedding
         query_embedding = self.embedding_model.encode([query])
         faiss.normalize_L2(query_embedding)
@@ -603,11 +613,20 @@ class MultilingualRAG:
         # Search in vector store
         scores, indices = self.vector_store.search(query_embedding.astype('float32'), k)
         
-        # Get relevant chunks
+        # Get relevant chunks with scores, filtering by threshold
         relevant_chunks = []
-        for idx in indices[0]:
-            if idx < len(self.chunks):
-                relevant_chunks.append(self.chunks[idx].page_content)
+        for score, idx in zip(scores[0], indices[0]):
+            if idx < len(self.chunks) and score >= similarity_threshold:
+                relevant_chunks.append((self.chunks[idx].page_content, float(score)))
+        
+        # Log retrieval quality
+        if relevant_chunks:
+            avg_score = sum(score for _, score in relevant_chunks) / len(relevant_chunks)
+            print(f"Retrieved {len(relevant_chunks)} chunks above threshold {similarity_threshold}")
+            print(f"Similarity scores: {[f'{score:.3f}' for _, score in relevant_chunks[:3]]}")
+            print(f"Average similarity: {avg_score:.3f}")
+        else:
+            print(f"No chunks found above similarity threshold {similarity_threshold}")
         
         return relevant_chunks
     
@@ -616,16 +635,14 @@ class MultilingualRAG:
         if target_language == "roman_urdu":
             # For Roman Urdu responses, add instruction to convert any Urdu script
             context_instruction = (
-                "Note: The following context contains Urdu text. "
-                "Please convert any Urdu script words to Roman Urdu in your response.\n\n"
+                "IMPORTANT: The context below is from the book. Convert any Urdu script to Roman Urdu.\n\n"
                 f"{context}"
             )
             return context_instruction
         elif target_language == "english":
             # For English responses, add instruction to translate Urdu words
             context_instruction = (
-                "Note: The following context contains Urdu text. "
-                "Please translate any Urdu words to English in your response and provide English names/terms.\n\n"
+                "IMPORTANT: The context below is from the book. Translate Urdu text to English.\n\n"
                 f"{context}"
             )
             return context_instruction
@@ -638,81 +655,194 @@ class MultilingualRAG:
             urdu_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
             if urdu_pattern.search(response):
                 # If Urdu script found, add a note
-                response += "\n\n(Note: Some original text was in Urdu script and may need manual conversion to Roman Urdu)"
+                response += "\n\n(Note: Kuch original text Urdu script mein tha)"
         elif language == "english":
             # For English responses, check if Urdu script still exists
             urdu_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
             if urdu_pattern.search(response):
-                response += "\n\n(Note: Some original names were in Urdu script - please refer to the English transliteration above)"
+                response += "\n\n(Note: Some original text was in Urdu script)"
         
         return response
     
     def create_multilingual_prompt(self, language: str) -> ChatPromptTemplate:
-        """Create language-specific prompt templates"""
+        """Create language-specific prompt templates with STRICT context adherence"""
         
         if language == "urdu":
-            template = """آپ ایک مددگار اردو اسسٹنٹ ہیں۔ دیے گئے سیاق و سباق کی بنیاد پر سوال کا جواب دیں۔
-جواب اردو میں دیں اور مکمل اور درست ہو۔
-سیاق و سباق:
+            template = """آپ ایک اردو کتاب کے معاون ہیں۔ آپ کا کام صرف دیے گئے سیاق و سباق سے جوابات دینا ہے۔
+
+⚠️ انتہائی اہم ہدایات:
+1. صرف اور صرف نیچے دیے گئے سیاق و سباق سے معلومات استعمال کریں
+2. اپنی عام معلومات یا تربیت کا استعمال بالکل نہ کریں
+3. اگر سیاق و سباق میں سوال کا جواب نہیں ہے تو صاف کہیں: "معذرت، یہ معلومات اس کتاب میں نہیں ملیں"
+4. کبھی بھی باہر کی معلومات شامل نہ کریں
+5. اگر آپ کو یقین نہیں تو جواب نہ دیں
+
+سیاق و سباق (کتاب سے):
 {context}
+
 سوال: {question}
-جواب:"""
+
+جواب (صرف کتاب کے سیاق و سباق سے):"""
         
         elif language == "roman_urdu":
-            template = """Aap ek helpful Roman Urdu assistant hain. Diye gaye context ki base par sawal ka jawab dein.
-Jawab SIRF Roman Urdu mein dein. Urdu script (Arabic letters) ka istemaal BILKUL nahi karein.
-Sab kuch English/Roman letters mein likhein. Complete aur sahi jawab dein.
-IMPORTANT: Koi bhi Urdu script words ko Roman Urdu mein convert kar dein.
-Context:
+            template = """Aap ek Urdu kitaab ke assistant hain. Aapka kaam SIRF diye gaye context se jawab dena hai.
+
+⚠️ BOHOT ZAROORI HIDAYAT:
+1. SIRF aur SIRF neeche diye gaye context ki maloomat use karein
+2. Apni general knowledge ya training ka istemaal BILKUL mat karein
+3. Agar context mein sawal ka jawab nahi hai toh saaf kahein: "Maazrat, yeh maloomat is kitaab mein nahi mili"
+4. Kabhi bhi bahar ki maloomat shamil na karein
+5. Agar yakeen nahi hai toh jawab na dein
+6. Har jawab context se hona chahiye - koi general gyaan nahi
+
+Context (kitaab se):
 {context}
+
 Sawal: {question}
-Roman Urdu mein jawab:"""
+
+Jawab (SIRF kitaab ke context se, Roman Urdu mein):"""
         
         else:  # English
-            template = """You are a helpful assistant. Answer the question based on the given context.
-Provide a complete and accurate answer in English. If the context contains Urdu names or words, 
-please provide their English transliteration (Roman script) or translation.
-Context:
+            template = """You are a book assistant. Your job is to answer questions ONLY from the provided context.
+
+⚠️ CRITICAL INSTRUCTIONS - READ CAREFULLY:
+1. Answer ONLY using information explicitly stated in the context below
+2. DO NOT use your general knowledge, training data, or external information
+3. If the context doesn't contain information to answer the question, respond EXACTLY: "I apologize, but I couldn't find information about this in the book."
+4. NEVER provide general knowledge answers
+5. NEVER make assumptions beyond what's in the context
+6. If uncertain, DO NOT answer
+7. Every statement must be traceable to the context
+
+Context (from the book):
 {context}
+
 Question: {question}
-Answer (in English only):"""
+
+Answer (ONLY from the book context above):"""
         
         return ChatPromptTemplate.from_template(template)
     
-    def answer_query(self, query: str) -> str:
-        """Answer a multilingual query"""
+    def get_not_found_message(self, language: str) -> str:
+        """Return appropriate 'not found' message based on language"""
+        if language == "urdu":
+            return "معذرت، یہ معلومات اس کتاب میں نہیں ملیں۔ براہ کرم کتاب کے موضوع سے متعلق سوال پوچھیں۔"
+        elif language == "roman_urdu":
+            return "Maazrat, yeh maloomat is kitaab mein nahi mili. Meherbani kar ke kitaab ke mauzu se mutaliq sawal puchein."
+        else:
+            return "I apologize, but I couldn't find information about this in the book. Please ask questions related to the book's content."
+    
+    def answer_query(self, query: str, debug_mode: bool = False) -> str:
+        """
+        Answer a multilingual query with STRICT relevance filtering.
+        Only answers if retrieved context is relevant (similarity >= threshold)
+        
+        Args:
+            query: The user's question
+            debug_mode: If True, returns detailed debug info instead of answer
+        """
         # Detect language
         language = self.detect_language(query)
+        print(f"\n{'='*60}")
         print(f"Detected language: {language}")
+        print(f"Query: {query}")
         
-        # Search for relevant chunks
-        relevant_chunks = self.search_similar_chunks(query, k=5)
-        context = "\n\n".join(relevant_chunks)
+        # Search for relevant chunks with scores (get all scores for analysis)
+        all_chunks_with_scores = self.search_similar_chunks(
+            query, 
+            k=RETRIEVAL_K, 
+            similarity_threshold=0.0  # Get all for analysis
+        )
+        
+        if not all_chunks_with_scores:
+            print(f"⚠️ No chunks retrieved at all!")
+            print(f"{'='*60}\n")
+            return self.get_not_found_message(language)
+        
+        # Show all scores for debugging
+        all_scores = [score for _, score in all_chunks_with_scores]
+        print(f"All similarity scores: {[f'{s:.3f}' for s in all_scores[:5]]}...")
+        print(f"Max score: {max(all_scores):.3f}, Min score: {min(all_scores):.3f}")
+        
+        # Filter by threshold
+        relevant_chunks_with_scores = [(chunk, score) for chunk, score in all_chunks_with_scores 
+                                       if score >= SIMILARITY_THRESHOLD]
+        
+        # If debug mode, return diagnostic info
+        if debug_mode:
+            return {
+                'all_scores': all_scores,
+                'chunks_above_threshold': len(relevant_chunks_with_scores),
+                'threshold': SIMILARITY_THRESHOLD,
+                'max_score': max(all_scores),
+                'recommendation': 'Lower threshold' if len(relevant_chunks_with_scores) == 0 else 'Threshold OK'
+            }
+        
+        # CRITICAL: Check if we have enough relevant chunks
+        if not relevant_chunks_with_scores or len(relevant_chunks_with_scores) < MIN_CHUNKS_REQUIRED:
+            print(f"⚠️ Insufficient relevant context found (needed {MIN_CHUNKS_REQUIRED}, got {len(relevant_chunks_with_scores)})")
+            print(f"💡 TIP: Current threshold is {SIMILARITY_THRESHOLD}. Max score was {max(all_scores):.3f}")
+            print(f"💡 Consider lowering SIMILARITY_THRESHOLD if questions from the book aren't being answered")
+            print(f"Returning 'not found' message")
+            print(f"{'='*60}\n")
+            return self.get_not_found_message(language)
+        
+        # Calculate average similarity score
+        avg_score = sum(score for _, score in relevant_chunks_with_scores) / len(relevant_chunks_with_scores)
+        print(f"Average similarity score: {avg_score:.3f}")
+        
+        # Additional check: If average score is too low, don't answer
+        if avg_score < SIMILARITY_THRESHOLD:
+            print(f"⚠️ Average similarity ({avg_score:.3f}) below threshold ({SIMILARITY_THRESHOLD})")
+            print(f"Context not relevant enough - returning 'not found' message")
+            print(f"{'='*60}\n")
+            return self.get_not_found_message(language)
+        
+        # Extract just the text content from relevant chunks
+        relevant_chunks = [chunk for chunk, score in relevant_chunks_with_scores]
+        context = "\n\n---\n\n".join(relevant_chunks)  # Better separation between chunks
+        
+        print(f"✓ Using {len(relevant_chunks)} relevant chunks for answer generation")
+        print(f"Context length: {len(context)} characters")
         
         # Preprocess context for target language
         context = self.preprocess_context_for_language(context, language)
         
-        # Create appropriate prompt
+        # Create appropriate prompt with strict instructions
         prompt_template = self.create_multilingual_prompt(language)
         
-        # Create and run chain using new LangChain syntax
+        # Create and run chain
         try:
-            # Use the new RunnableSequence approach
             chain = prompt_template | self.llm
             response = chain.invoke({"context": context, "question": query})
             
-            # Extract content from the response
             if hasattr(response, 'content'):
                 final_response = response.content.strip()
             else:
                 final_response = str(response).strip()
             
+            # Check if the model returned a "not found" type response
+            not_found_indicators = [
+                "couldn't find", "not found", "nahi mila", "nahi mili", 
+                "نہیں ملا", "نہیں ملی", "معذرت", "maazrat"
+            ]
+            
+            if any(indicator.lower() in final_response.lower() for indicator in not_found_indicators):
+                print("ℹ️ Model indicated information not found in context")
+            else:
+                print("✓ Answer generated from book context")
+            
             # Post-process for language consistency
             final_response = self.post_process_response(final_response, language)
+            
+            print(f"{'='*60}\n")
             return final_response
                 
         except Exception as e:
-            return f"Error generating response: {str(e)}"
+            error_msg = f"Error generating response: {str(e)}"
+            print(f"❌ {error_msg}")
+            print(f"{'='*60}\n")
+            return error_msg
 
 @app.route('/')
 def index():
@@ -864,7 +994,7 @@ def delete_book():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    """Handle chat queries with selected book"""
+    """Handle chat queries with selected book - with enhanced logging"""
     data = request.json
     query = data.get('query')
     selected_book_id = data.get('book_id')
@@ -882,14 +1012,20 @@ def chat():
         return jsonify({'error': 'No book selected or invalid book ID'}), 400
 
     try:
+        print(f"\n{'='*80}")
+        print(f"CHAT REQUEST - Book: {book_library[book_id]['name']}")
+        print(f"{'='*80}")
+        
         rag_system = book_library[book_id]['rag_system']
         response = rag_system.answer_query(query)
+        
         return jsonify({
             'success': True,
             'response': response,
             'book_name': book_library[book_id]['name']
         })
     except Exception as e:
+        print(f"❌ Error in chat endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get_books', methods=['GET'])
@@ -931,6 +1067,60 @@ def select_book():
         'message': f'Selected book: {book_library[book_id]["name"]}',
         'book_name': book_library[book_id]['name']
     })
+
+@app.route('/debug_retrieval', methods=['POST'])
+def debug_retrieval():
+    """Debug endpoint to see what chunks are being retrieved for a query"""
+    data = request.json
+    query = data.get('query')
+    book_id = data.get('book_id') or current_selected_book
+
+    if not query:
+        return jsonify({'error': 'No query provided'}), 400
+
+    if not book_id or book_id not in book_library:
+        return jsonify({'error': 'No book selected'}), 400
+
+    try:
+        rag_system = book_library[book_id]['rag_system']
+        
+        # Get chunks with scores
+        chunks_with_scores = rag_system.search_similar_chunks(
+            query, 
+            k=RETRIEVAL_K,
+            similarity_threshold=0.0  # Get all chunks for debugging
+        )
+        
+        # Prepare debug information
+        debug_info = {
+            'query': query,
+            'book_name': book_library[book_id]['name'],
+            'total_chunks': len(rag_system.chunks),
+            'similarity_threshold': SIMILARITY_THRESHOLD,
+            'retrieved_chunks': []
+        }
+        
+        for chunk_text, score in chunks_with_scores:
+            debug_info['retrieved_chunks'].append({
+                'text': chunk_text[:200] + '...' if len(chunk_text) > 200 else chunk_text,
+                'similarity_score': float(score),
+                'above_threshold': score >= SIMILARITY_THRESHOLD
+            })
+        
+        # Calculate statistics
+        above_threshold = [s for _, s in chunks_with_scores if s >= SIMILARITY_THRESHOLD]
+        debug_info['stats'] = {
+            'chunks_above_threshold': len(above_threshold),
+            'avg_score_all': float(sum(s for _, s in chunks_with_scores) / len(chunks_with_scores)) if chunks_with_scores else 0,
+            'avg_score_above_threshold': float(sum(above_threshold) / len(above_threshold)) if above_threshold else 0,
+            'max_score': float(max(s for _, s in chunks_with_scores)) if chunks_with_scores else 0,
+            'min_score': float(min(s for _, s in chunks_with_scores)) if chunks_with_scores else 0
+        }
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/get_ocr_status', methods=['GET'])
 def get_ocr_status():
@@ -974,6 +1164,18 @@ def get_combined_status():
         'has_updates': len(ocr_messages) > 0 or len(rag_messages) > 0
     })
 
+@app.route('/get_config', methods=['GET'])
+def get_config():
+    """Get current RAG configuration settings"""
+    return jsonify({
+        'similarity_threshold': SIMILARITY_THRESHOLD,
+        'retrieval_k': RETRIEVAL_K,
+        'min_chunks_required': MIN_CHUNKS_REQUIRED,
+        'chunk_size': 800,
+        'chunk_overlap': 150,
+        'temperature': 0.2
+    })
+
 def save_book_library():
     """Save book library to JSON file"""
     try:
@@ -989,8 +1191,10 @@ def save_book_library():
 
         with open(book_library_file, 'w', encoding='utf-8') as f:
             json.dump(library_data, f, indent=2)
+        
+        print(f"✓ Book library saved: {len(library_data)} books")
     except Exception as e:
-        print(f"Error saving book library: {e}")
+        print(f"❌ Error saving book library: {e}")
 
 def load_book_library():
     """Load book library from JSON file"""
@@ -1011,7 +1215,7 @@ def load_book_library():
             groq_api_key = os.getenv('GROQ_API_KEY')
 
             if not groq_api_key:
-                print("Warning: GROQ_API_KEY not found, books will be loaded without RAG systems")
+                print("⚠️ Warning: GROQ_API_KEY not found, books will be loaded without RAG systems")
                 return
 
             for book_id, book_info in library_data.items():
@@ -1027,9 +1231,9 @@ def load_book_library():
                     if os.path.exists(book_rag_system.faiss_index_file):
                         print(f"Loading vector store for book: {book_id}")
                         book_rag_system.load_vector_store()
-                        print(f"Successfully loaded vector store for book: {book_id}")
+                        print(f"✓ Successfully loaded vector store for book: {book_id}")
                     else:
-                        print(f"Vector store not found for book {book_id}, will be created when needed")
+                        print(f"⚠️ Vector store not found for book {book_id}, will be created when needed")
 
                     # Add to book library
                     book_library[book_id] = {
@@ -1039,15 +1243,17 @@ def load_book_library():
                         'output_file': output_file,
                         'created_at': book_info.get('created_at', 0)
                     }
-                    print(f"Successfully loaded book: {book_id}")
+                    print(f"✓ Successfully loaded book: {book_id}")
                 except Exception as e:
-                    print(f"Error loading book {book_id}: {e}")
+                    print(f"❌ Error loading book {book_id}: {e}")
                     # Continue loading other books even if one fails
                     continue
+            
+            print(f"✓ Loaded {len(book_library)} books successfully")
         else:
-            print("No existing book library file found, starting fresh")
+            print("ℹ️ No existing book library file found, starting fresh")
     except Exception as e:
-        print(f"Error loading book library: {e}")
+        print(f"❌ Error loading book library: {e}")
 
 def check_duplicate_book(book_name):
     """Check if a book with the same name already exists"""
@@ -1057,8 +1263,23 @@ def check_duplicate_book(book_name):
     return False
 
 if __name__ == '__main__':
+    print("\n" + "="*80)
+    print("URDU OCR RAG SYSTEM - ENHANCED VERSION")
+    print("="*80)
+    print(f"Configuration:")
+    print(f"  - Similarity Threshold: {SIMILARITY_THRESHOLD}")
+    print(f"  - Retrieval K: {RETRIEVAL_K}")
+    print(f"  - Min Chunks Required: {MIN_CHUNKS_REQUIRED}")
+    print(f"  - Temperature: 0.2 (strict context adherence)")
+    print("="*80 + "\n")
+    
     # Load book library on startup
     load_book_library()
     # Load models on startup
     setup_models()
+    
+    print("\n" + "="*80)
+    print("Starting Flask server...")
+    print("="*80 + "\n")
+    
     app.run(host="0.0.0.0", port=5001, debug=True)
